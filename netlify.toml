@@ -3,3 +3,5 @@
 
 [functions]
   directory = "netlify/functions"
+  included_files = ["**/*.js"]
+  node_bundler = "esbuild"
