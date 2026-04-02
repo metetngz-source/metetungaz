@@ -1,38 +1,64 @@
-export default async (req, context) => {
-  if (req.method !== 'POST') return new Response('Method not allowed', { status: 405 });
+exports.handler = async function(event, context) {
+  if (event.httpMethod !== 'POST') {
+    return { statusCode: 405, body: 'Method not allowed' };
+  }
+
+  const { messages } = JSON.parse(event.body);
+  const apiKey = process.env.GEMINI_API_KEY;
+
+  if (!apiKey) {
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: 'GEMINI_API_KEY missing' })
+    };
+  }
+
+  const system = `Sen Mete Tungaz'in AI tasarim asistanisin. Mete, Black & Gray Realism uzman dovme sanatcisi. Marmaris, Alanya, Istanbul. 2016 Rotterdam 2. odulu. Instagram: @metetungaz.
+
+GOREV: Musteriden adim adim bilgi toplayarak Black & Gray Realism tasarim konsepti olustur.
+SIRASYLA sor (hepsini bir anda sorma):
+1. Hangi vucut bolgesine?
+2. Ne motif/konu? (portre, hayvan, doga, soyut...)
+3. Boyut? (kucuk 5-8cm / orta 10-15cm / buyuk 20cm+ / sleeve)
+4. Ozel anlam veya referans var mi?
+
+Bilgileri aldiktan sonra 'Bu tasarim Mete Tungaz'in elinde...' diye baslayan detayli Black & Gray konsept yaz.
+
+FIYAT KURALI: Fiyat/ucret sorulursa SADECE su mesaji ver:
+Fiyat icin Mete ile direkt iletisime gecebilirsin: https://wa.me/905464068636
+
+Kisa ve samimi (konsept haric max 2-3 cumle). Markdown kullanma. Turkce soruya Turkce, Ingilizce soruya Ingilizce cevap ver.`;
+
+  const geminiMessages = messages.map(m => ({
+    role: m.role === 'assistant' ? 'model' : 'user',
+    parts: [{ text: m.content }]
+  }));
 
   try {
-    const { messages } = await req.json();
-    const hfToken = Netlify.env.get('HUGGINGFACE_TOKEN');
-
-    if (!hfToken) return Response.json({ error: 'HF_TOKEN_MISSING' }, { status: 500 });
-
-    const systemPrompt = `Sen Mete Tungaz'ın profesyonel dövme asistanısın. 
-Mete: Siyah-Gri Realizm uzmanı, 2016 Rotterdam 2.si. Şubeler: Alanya, Marmaris ve global.
-KURAL: Kısa yaz, her mesajda sadece 1 soru sor. Sırayla: Bölge, Motif, Boyut.
-Fiyat/Randevu: https://wa.me/905464068636`;
-
     const response = await fetch(
-      'https://api-inference.huggingface.co/models/mistralai/Mistral-7B-Instruct-v0.2/v1/chat/completions',
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${hfToken}`, 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: 'mistralai/Mistral-7B-Instruct-v0.2',
-          messages: [{ role: 'system', content: systemPrompt }, ...messages],
-          max_tokens: 300
+          contents: geminiMessages,
+          systemInstruction: { parts: [{ text: system }] }
         })
       }
     );
 
     const data = await response.json();
-    const reply = data.choices?.[0]?.message?.content || "Küçük bir teknik aksaklık oldu, tekrar yazar mısın? 💉";
+    const reply = data.candidates?.[0]?.content?.parts?.[0]?.text || 'Bir hata olustu.';
 
-    return Response.json({ content: [{ type: 'text', text: reply }] });
-
+    return {
+      statusCode: 200,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: [{ type: 'text', text: reply }] })
+    };
   } catch (error) {
-    return Response.json({ error: error.message }, { status: 500 });
+    return {
+      statusCode: 500,
+      body: JSON.stringify({ error: error.message })
+    };
   }
 };
-
-export const config = { path: "/api/chat" };
